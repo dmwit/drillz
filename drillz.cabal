@@ -21,22 +21,24 @@ data-files:         drillz.mp3
 -- category:
 extra-source-files: CHANGELOG.md
 
+common exe
+    other-modules:    Drillz
+    build-depends:    base ^>=4.14.1.0,
+                      containers ^>=0.6,
+    default-language: Haskell2010
+    ghc-options:      -Wno-tabs -threaded -O2 -Wall
+
 executable drillz
+    import:           exe
     main-is:          drillz.hs
     other-modules:    Paths_drillz
     autogen-modules:  Paths_drillz
 
-    -- Modules included in this executable, other than Main.
-    -- other-modules:
+    build-depends:    filepath ^>=1.4,
+                      process ^>=1.6,
+                      random ^>=1.2,
+                      xdg-basedir ^>=0.2,
 
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
-    build-depends:    base ^>=4.14.1.0
-                      , containers ^>=0.6
-                      , filepath ^>=1.4
-                      , process ^>=1.6
-                      , random ^>=1.2
-                      , xdg-basedir ^>=0.2
-    default-language: Haskell2010
-
-    ghc-options: -Wno-tabs -threaded -O2
+executable display-rocket-league-drills
+    import:           exe
+    main-is:          display-rocket-league-drills.hs
