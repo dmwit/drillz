@@ -5,7 +5,10 @@ import Data.IORef
 import Data.Map (Map)
 import Data.Maybe
 import Paths_drillz
+import System.Environment
+import System.Environment.XDG.BaseDir
 import System.Exit
+import System.FilePath
 import System.IO
 import System.Process
 import System.Random
@@ -392,9 +395,6 @@ offerProgress d = go (path d) where
 loopTime :: Int
 loopTime = 10*60*1000*1000
 
-configFilename :: FilePath
-configFilename = "/home/dmwit/.config/drillz.conf"
-
 selectLoop :: Drill -> Progress -> IO Drill
 selectLoop d p = do
 	d' <- selectDrill allDrills p
@@ -421,8 +421,8 @@ drillThread dRef pMVar d0 = do
 		forkIO (() <$ readProcess "mpv" ["--really-quiet", mp3] "")
 		selectLoop d p >>= loop mp3
 
-progressThread :: IORef (Maybe Drill) -> MVar Progress -> IO a
-progressThread dRef pMVar = forever $ do
+progressThread :: FilePath -> IORef (Maybe Drill) -> MVar Progress -> IO a
+progressThread pFilename dRef pMVar = forever $ do
 	getLine
 	p <- takeMVar pMVar
 	md <- readIORef dRef
@@ -433,14 +433,49 @@ progressThread dRef pMVar = forever $ do
 		Just d -> do
 			putStrLn $ "making progress on " ++ task d
 			let p' = makeProgressOn d allDrills p
-			p' <$ writeFile configFilename (show p')
+			p' <$ writeFile pFilename (show p')
 	putMVar pMVar p'
+
+defaultProfile :: String
+defaultProfile = "default"
+
+drillsFilename :: String -> IO FilePath
+drillsFilename profile = getUserDataDir ("drillz" </> "drills" </> profile)
+
+progressFilename :: String -> IO FilePath
+progressFilename profile = getUserConfigDir ("drillz" </> "progress" </> profile)
+
+usage :: Int -> IO a
+usage n = do
+	exe <- getProgName
+	d <- drillsFilename "PROFILE"
+	p <- progressFilename "PROFILE"
+	out "USAGE: %s [PROFILE | -p PROFILE]" exe
+	out "Randomly cycle between drills in an exercise regimen, gradually making the exercises harder."
+	out ""
+	out "The regimen is stored in %s." d
+	out "The record of how difficult to make each exercise is stored in %s." p
+	out "The default PROFILE is %s." (show defaultProfile)
+	exitWith (if n == 0 then ExitSuccess else ExitFailure n)
+	where
+	out :: HPrintfType r => String -> r
+	out s = hPrintf (if n == 0 then stdout else stderr) (s ++ "\n")
 
 main :: IO ()
 main = do
-	p <- catch (read <$> readFile configFilename) defaultProgress
+	args <- getArgs
+	profile <- case args of
+		["-h"] -> usage 0
+		["--help"] -> usage 0
+		["-p", nm] -> pure nm
+		[nm] -> pure nm
+		[] -> pure defaultProfile
+		_ -> usage 1
+	pFilename <- progressFilename profile
+	p <- catch (read <$> readFile pFilename) defaultProgress
+	print p
 	d <- selectDrill allDrills p
 	dRef <- newIORef Nothing
 	pMVar <- newMVar p
 	forkIO (drillThread dRef pMVar d)
-	progressThread dRef pMVar
+	progressThread pFilename dRef pMVar
