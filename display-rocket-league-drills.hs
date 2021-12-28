@@ -1,19 +1,24 @@
+{-# LANGUAGE OverloadedStrings #-}
+
+import Config
+import Data.Text (Text)
 import Drillz
 import Text.Printf
 import qualified Data.Map as M
+import qualified Data.Text as T
 
-drills :: [(String, [Drills])] -> Drills
-drills = Drills . M.fromListWithKey (\k _ _ -> error $ "duplicate key " ++ k)
+drills :: [(Text, [Drills])] -> Drills
+drills = Drills . M.fromListWithKey (\k _ _ -> error $ "duplicate key " ++ T.unpack k)
 
-drill :: String -> Drills
+drill :: Text -> Drills
 drill description = drills [(description, [])]
 
-alternatives :: [String] -> Drills
+alternatives :: [Text] -> Drills
 alternatives descriptions = drills [(description, []) | description <- descriptions]
 
-levels :: String -> Int -> (String, [Drills])
+levels :: Text -> Int -> (Text, [Drills])
 levels description n = (description, [maxLevel i | i <- [1..n]]) where
-	maxLevel i = alternatives $
+	maxLevel i = alternatives . map T.pack $
 		[ printf "%s levels %d-%d" description j (j+4)
 		| j <- [1, 6 .. i-9]
 		] ++
@@ -317,4 +322,4 @@ allDrills = drills $ tail [undefined
 	]
 
 main :: IO ()
-main = print allDrills
+main = print . pretty . drillsToConfig $ allDrills

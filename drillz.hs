@@ -4,6 +4,7 @@ import Control.Monad
 import Data.IORef
 import Data.Map (Map)
 import Data.Maybe
+import Data.Text (Text)
 import Drillz
 import Paths_drillz
 import System.Environment
@@ -15,21 +16,22 @@ import System.Process
 import System.Random
 import Text.Printf
 import qualified Data.Map as M
+import qualified Data.Text.IO as T
 
-newtype Progress = Progress (Map String (Int, Progress)) deriving (Eq, Ord, Read, Show)
+newtype Progress = Progress (Map Text (Int, Progress)) deriving (Eq, Ord, Read, Show)
 
 noProgress :: Progress
 noProgress = Progress M.empty
 
-getProgress :: String -> Progress -> (Int, Progress)
+getProgress :: Text -> Progress -> (Int, Progress)
 getProgress nm (Progress progress) = M.findWithDefault (0, noProgress) nm progress
 
-setProgress :: String -> Int -> Progress -> Progress -> Progress
+setProgress :: Text -> Int -> Progress -> Progress -> Progress
 setProgress nm n p (Progress progress) = Progress (M.insert nm (n, p) progress)
 
 data Drill = Drill
-	{ task :: String
-	, path :: [(Int, String)] -- TODO: [(String, Int)] makes more sense
+	{ task :: Text
+	, path :: [(Int, Text)] -- TODO: [(Text, Int)] makes more sense
 	} deriving (Eq, Ord, Read, Show)
 
 selectDrill :: Drills -> Progress -> IO Drill
@@ -42,21 +44,21 @@ selectDrill = go [] where
 				{ task = name
 				, path = reverse as
 				}
-			n -> go ((ix, name):as) drills' progress'
+			_ -> go ((ix, name):as) drills' progress'
 				where
 				(ix, progress') = getProgress name progress
 				drills' = head (drop ix progression ++ [last progression])
 
 finished :: Drills -> Progress -> Bool
 finished (Drills drills) (Progress progress) = M.isSubmapOfBy go drills progress where
-	go ds (n, p) = n >= length ds
+	go ds (n, _) = n >= length ds
 
 makeProgressOn :: Drill -> Drills -> Progress -> Progress
 makeProgressOn d = go (path d) where
-	go [] (Drills drills) (Progress progress) = Progress (M.insertWith combineProgress (task d) (1, noProgress) progress)
+	go [] _ (Progress progress) = Progress (M.insertWith combineProgress (task d) (1, noProgress) progress)
 	go ((p, nm):as) (Drills drills) progress = fromMaybe progress $ do
-		d <- M.lookup nm drills
-		drills' <- listToMaybe (drop p d)
+		ds <- M.lookup nm drills
+		drills' <- listToMaybe (drop p ds)
 		let (_, childProgress) = getProgress nm progress
 		    childProgress' = go as drills' childProgress
 		    progress' = if finished drills' childProgress'
@@ -64,7 +66,7 @@ makeProgressOn d = go (path d) where
 		    	else setProgress nm p childProgress' progress
 		pure progress'
 
-	combineProgress (n, p) (n', p') = (n+n', p)
+	combineProgress (n, p) (n', _p') = (n+n', p)
 
 offerProgress :: Drill -> Drills -> Progress -> Bool
 offerProgress d = go (path d) where
@@ -73,9 +75,9 @@ offerProgress d = go (path d) where
 		Nothing -> error "internal error: selected a drill that doesn't exist??"
 		Just ds -> case drop p ds of
 			[] -> False
-			d:_ -> go as d progress'
+			alts:_ -> go as alts progress'
 		where (p', progress') = getProgress nm progress
-	go [] (Drills drills) progress = fst (getProgress (task d) progress) == 0
+	go [] _ progress = fst (getProgress (task d) progress) == 0
 
 loopTime :: Int
 loopTime = 10*60*1000*1000
@@ -96,19 +98,19 @@ drillThread ds dRef pMVar d0 = do
 	loop mp3 d0
 	where
 	loop mp3 d = do
-		putStrLn (task d)
+		T.putStrLn (task d)
 		threadDelay loopTime
 		p <- takeMVar pMVar
 		if offerProgress d ds p
 			then putStrLn "if that was easy, press enter" >> writeIORef dRef (Just d)
 			else writeIORef dRef Nothing
 		putMVar pMVar p
-		forkIO (() <$ readProcess "mpv" ["--really-quiet", mp3] "")
+		_ <- forkIO (() <$ readProcess "mpv" ["--really-quiet", mp3] "")
 		selectLoop ds d p >>= loop mp3
 
 progressThread :: Drills -> FilePath -> IORef (Maybe Drill) -> MVar Progress -> IO a
 progressThread ds pFilename dRef pMVar = forever $ do
-	getLine
+	_ <- getLine
 	p <- takeMVar pMVar
 	md <- readIORef dRef
 	p' <- case md of
@@ -116,7 +118,8 @@ progressThread ds pFilename dRef pMVar = forever $ do
 			putStrLn $ "WARNING: no progress made\nthe previous drill was already marked easy (or there was no previous drill)"
 			pure p
 		Just d -> do
-			putStrLn $ "making progress on " ++ task d
+			putStr "making progress on "
+			T.putStrLn $ task d
 			let p' = makeProgressOn d ds p
 			p' <$ writeFile pFilename (show p')
 	putMVar pMVar p'
@@ -159,9 +162,9 @@ main = do
 	pFilename <- progressFilename profile
 	p <- catch (read <$> readFile pFilename) defaultProgress
 	dsFilename <- drillsFilename profile
-	ds <- read <$> readFile dsFilename
+	ds <- T.readFile dsFilename >>= parseIO configToDrills
 	d <- selectDrill ds p
 	dRef <- newIORef Nothing
 	pMVar <- newMVar p
-	forkIO (drillThread ds dRef pMVar d)
+	_ <- forkIO (drillThread ds dRef pMVar d)
 	progressThread ds pFilename dRef pMVar
