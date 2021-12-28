@@ -14,6 +14,7 @@ version:            0.1.0.0
 license:            BSD-3-Clause
 author:             Daniel Wagner
 maintainer:         me@dmwit.com
+data-files:         drillz.mp3
 
 -- A copyright notice.
 -- copyright:
@@ -22,6 +23,8 @@ extra-source-files: CHANGELOG.md
 
 executable drillz
     main-is:          drillz.hs
+    other-modules:    Paths_drillz
+    autogen-modules:  Paths_drillz
 
     -- Modules included in this executable, other than Main.
     -- other-modules:

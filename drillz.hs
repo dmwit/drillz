@@ -4,6 +4,7 @@ import Control.Monad
 import Data.IORef
 import Data.Map (Map)
 import Data.Maybe
+import Paths_drillz
 import System.Exit
 import System.IO
 import System.Process
@@ -405,8 +406,11 @@ defaultProgress :: IOException -> IO Progress
 defaultProgress _ = pure noProgress
 
 drillThread :: IORef (Maybe Drill) -> MVar Progress -> Drill -> IO a
-drillThread dRef pMVar = loop where
-	loop d = do
+drillThread dRef pMVar d0 = do
+	mp3 <- getDataFileName "drillz.mp3"
+	loop mp3 d0
+	where
+	loop mp3 d = do
 		putStrLn (task d)
 		threadDelay loopTime
 		p <- takeMVar pMVar
@@ -414,8 +418,8 @@ drillThread dRef pMVar = loop where
 			then putStrLn "if that was easy, press enter" >> writeIORef dRef (Just d)
 			else writeIORef dRef Nothing
 		putMVar pMVar p
-		forkIO (() <$ readProcess "mpv" ["--really-quiet", "drillz.mp3"] "")
-		selectLoop d p >>= loop
+		forkIO (() <$ readProcess "mpv" ["--really-quiet", mp3] "")
+		selectLoop d p >>= loop mp3
 
 progressThread :: IORef (Maybe Drill) -> MVar Progress -> IO a
 progressThread dRef pMVar = forever $ do
