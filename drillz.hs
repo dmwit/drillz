@@ -1,3 +1,8 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
+
+import Config
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
@@ -5,6 +10,8 @@ import Data.IORef
 import Data.Map (Map)
 import Data.Maybe
 import Data.Text (Text)
+import Data.Traversable
+import Data.Typeable
 import Drillz
 import Paths_drillz
 import System.Environment
@@ -16,6 +23,7 @@ import System.Process
 import System.Random
 import Text.Printf
 import qualified Data.Map as M
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
 newtype Progress = Progress (Map Text (Int, Progress)) deriving (Eq, Ord, Read, Show)
@@ -28,6 +36,53 @@ getProgress nm (Progress progress) = M.findWithDefault (0, noProgress) nm progre
 
 setProgress :: Text -> Int -> Progress -> Progress -> Progress
 setProgress nm n p (Progress progress) = Progress (M.insert nm (n, p) progress)
+
+progressToConfig :: Progress -> Value ()
+progressToConfig (Progress progress) = List () (go <$> M.toList progress) where
+	go (nm, (n, p)) = Sections ()
+		[ "alternative" ~: Text () nm
+		, "difficulty-level" ~: Number () (integerToNumber (toInteger n))
+		, "progress" ~: progressToConfig p
+		]
+	s ~: v = Section () s v
+
+data ProgressParseError a
+	= ProgressExpectedIndex a Number
+	| ProgressExpectedStruct (Value a)
+	| ProgressDuplicateAlternative a Text
+	| ProgressExpectedList (Value a)
+	deriving (Eq, Read, Show, Typeable)
+
+configToProgress :: Value a -> Either (ProgressParseError a) Progress
+configToProgress (List ann alts) = do
+	pairs <- for alts $ \case
+		Sections _
+			[ Section _ "alternative" (Text _ nm)
+			, Section _ "difficulty-level" (Number nAnn num)
+			, Section _ "progress" v
+			] -> do
+			n <- case numberToInteger num of
+				Just n | 0 <= n && n <= toInteger (maxBound :: Int)
+					-> pure (fromInteger n)
+				_ -> Left (ProgressExpectedIndex nAnn num)
+			p <- configToProgress v
+			pure (nm, pure (n, p))
+		v -> Left (ProgressExpectedStruct v)
+	progress <- sequence $ M.fromListWithKey (\k _ _ -> Left (ProgressDuplicateAlternative ann k)) pairs
+	pure (Progress progress)
+configToProgress other = Left (ProgressExpectedList other)
+
+instance a ~ Position => Exception (ProgressParseError a) where
+	displayException (ProgressExpectedIndex pos n) = displayException . ParseError pos $ ""
+		++ "Expected an index (a whole, positive number less than "
+		++ show (maxBound :: Int)
+		++ ", found " ++ show (pretty (Number () n)) ++ " instead."
+	displayException (ProgressExpectedStruct v) = displayException . ParseError (valueAnn v)
+		$ "Expected a section with keys alternative (with a string), difficulty-level (with a number), and progress, in that order."
+	displayException (ProgressDuplicateAlternative pos alt) = displayException . ParseError pos
+		$ "Two progress records for the same alternative (" ++ T.unpack alt ++ ")."
+	displayException (ProgressExpectedList v) = displayException . ParseError (valueAnn v)
+		$ "Expected a list of progress records, found a " ++ describeValue v ++ " instead."
 
 data Drill = Drill
 	{ task :: Text
@@ -121,7 +176,7 @@ progressThread ds pFilename dRef pMVar = forever $ do
 			putStr "making progress on "
 			T.putStrLn $ task d
 			let p' = makeProgressOn d ds p
-			p' <$ writeFile pFilename (show p')
+			p' <$ (writeFile pFilename . show . pretty . progressToConfig) p'
 	putMVar pMVar p'
 
 defaultProfile :: String
@@ -160,9 +215,8 @@ main = do
 		[] -> pure defaultProfile
 		_ -> usage 1
 	pFilename <- progressFilename profile
-	p <- catch (read <$> readFile pFilename) defaultProgress
-	dsFilename <- drillsFilename profile
-	ds <- T.readFile dsFilename >>= parseIO configToDrills
+	p <- catch (T.readFile pFilename >>= parseIO configToProgress) defaultProgress
+	ds <- drillsFilename profile >>= T.readFile >>= parseIO configToDrills
 	d <- selectDrill ds p
 	dRef <- newIORef Nothing
 	pMVar <- newMVar p
