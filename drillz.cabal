@@ -44,3 +44,7 @@ executable drillz
 executable display-rocket-league-drills
     import:           exe
     main-is:          display-rocket-league-drills.hs
+
+executable display-piano-drills
+    import:           exe
+    main-is:          display-piano-drills.hs

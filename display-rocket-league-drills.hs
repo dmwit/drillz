@@ -7,15 +7,6 @@ import Text.Printf
 import qualified Data.Map as M
 import qualified Data.Text as T
 
-drills :: [(Text, [Drills])] -> Drills
-drills = Drills . M.fromListWithKey (\k _ _ -> error $ "duplicate key " ++ T.unpack k)
-
-drill :: Text -> Drills
-drill description = drills [(description, [])]
-
-alternatives :: [Text] -> Drills
-alternatives descriptions = drills [(description, []) | description <- descriptions]
-
 levels :: Text -> Int -> (Text, [Drills])
 levels description n = (description, [maxLevel i | i <- [1..n]]) where
 	maxLevel i = alternatives . map T.pack $

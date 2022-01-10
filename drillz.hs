@@ -91,32 +91,32 @@ data Drill = Drill
 
 selectDrill :: Drills -> Progress -> IO Drill
 selectDrill = go [] where
-	go as (Drills drills) progress = do
-		n <- randomRIO (0, M.size drills-1)
-		(name, progression) <- evaluate (M.elemAt n drills)
+	go as (Drills ds) progress = do
+		n <- randomRIO (0, M.size ds-1)
+		(name, progression) <- evaluate (M.elemAt n ds)
 		case length progression of
 			0 -> pure Drill
 				{ task = name
 				, path = reverse as
 				}
-			_ -> go ((ix, name):as) drills' progress'
+			_ -> go ((ix, name):as) ds' progress'
 				where
 				(ix, progress') = getProgress name progress
-				drills' = head (drop ix progression ++ [last progression])
+				ds' = head (drop ix progression ++ [last progression])
 
 finished :: Drills -> Progress -> Bool
-finished (Drills drills) (Progress progress) = M.isSubmapOfBy go drills progress where
+finished (Drills ds0) (Progress progress) = M.isSubmapOfBy go ds0 progress where
 	go ds (n, _) = n >= length ds
 
 makeProgressOn :: Drill -> Drills -> Progress -> Progress
 makeProgressOn d = go (path d) where
 	go [] _ (Progress progress) = Progress (M.insertWith combineProgress (task d) (1, noProgress) progress)
-	go ((p, nm):as) (Drills drills) progress = fromMaybe progress $ do
-		ds <- M.lookup nm drills
-		drills' <- listToMaybe (drop p ds)
+	go ((p, nm):as) (Drills ds) progress = fromMaybe progress $ do
+		ds' <- M.lookup nm ds
+		ds'' <- listToMaybe (drop p ds')
 		let (_, childProgress) = getProgress nm progress
-		    childProgress' = go as drills' childProgress
-		    progress' = if finished drills' childProgress'
+		    childProgress' = go as ds'' childProgress
+		    progress' = if finished ds'' childProgress'
 		    	then setProgress nm (p+1) noProgress progress
 		    	else setProgress nm p childProgress' progress
 		pure progress'
@@ -125,10 +125,10 @@ makeProgressOn d = go (path d) where
 
 offerProgress :: Drill -> Drills -> Progress -> Bool
 offerProgress d = go (path d) where
-	go ((p, nm):as) (Drills drills) progress = case M.lookup nm drills of
+	go ((p, nm):as) (Drills ds) progress = case M.lookup nm ds of
 		_ | p < p' -> False
 		Nothing -> error "internal error: selected a drill that doesn't exist??"
-		Just ds -> case drop p ds of
+		Just ds' -> case drop p ds' of
 			[] -> False
 			alts:_ -> go as alts progress'
 		where (p', progress') = getProgress nm progress

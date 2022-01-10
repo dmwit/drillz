@@ -14,6 +14,15 @@ import qualified Data.Text as T
 
 newtype Drills = Drills (Map Text [Drills]) deriving (Eq, Ord, Read, Show)
 
+drills :: [(Text, [Drills])] -> Drills
+drills = Drills . M.fromListWithKey (\k _ _ -> error $ "duplicate key " ++ T.unpack k)
+
+drill :: Text -> Drills
+drill description = drills [(description, [])]
+
+alternatives :: [Text] -> Drills
+alternatives descriptions = drills [(description, []) | description <- descriptions]
+
 drillsToConfig :: Drills -> Value ()
 drillsToConfig (Drills drills) = List () (go <$> M.toList drills) where
 	go (nm, ds) = List () $ Text () nm : map drillsToConfig ds
